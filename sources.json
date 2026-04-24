@@ -1,0 +1,29 @@
+{
+  "sources": [
+    {
+      "name": "BBC News",
+      "url": "http://feeds.bbc.co.uk/news/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "CNN Top Stories",
+      "url": "http://rss.cnn.com/rss2.0/cnn_topstories.rss",
+      "enabled": true
+    },
+    {
+      "name": "Reuters",
+      "url": "https://www.reuters.com/finance",
+      "enabled": false
+    },
+    {
+      "name": "El País",
+      "url": "https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada",
+      "enabled": true
+    },
+    {
+      "name": "The New York Times",
+      "url": "https://feeds.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+      "enabled": true
+    }
+  ]
+}

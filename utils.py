@@ -1,0 +1,221 @@
+import feedparser
+import json
+import os
+import io
+from datetime import datetime
+from typing import List, Dict, Optional
+import google.generativeai as genai
+from dotenv import load_dotenv
+import asyncio
+
+# Load environment variables
+load_dotenv()
+
+# Configure Gemini API
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+class NewsAggregator:
+    """Handles RSS feed fetching and processing"""
+    
+    def __init__(self, sources_file: str = "sources.json"):
+        self.sources_file = sources_file
+        self.sources = self._load_sources()
+    
+    def _load_sources(self) -> List[Dict]:
+        """Load RSS sources from JSON file"""
+        if not os.path.exists(self.sources_file):
+            return []
+        
+        with open(self.sources_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get("sources", [])
+    
+    def fetch_feeds(self) -> List[Dict]:
+        """Fetch all enabled RSS feeds"""
+        all_articles = []
+        
+        for source in self.sources:
+            if not source.get("enabled", True):
+                continue
+            
+            try:
+                feed = feedparser.parse(source["url"])
+                
+                for entry in feed.entries[:5]:  # Get top 5 from each source
+                    article = {
+                        "source": source.get("name", "Unknown"),
+                        "title": entry.get("title", "Sin título"),
+                        "summary": entry.get("summary", entry.get("description", "")),
+                        "link": entry.get("link", ""),
+                        "published": entry.get("published", ""),
+                    }
+                    all_articles.append(article)
+            
+            except Exception as e:
+                print(f"Error fetching from {source['name']}: {str(e)}")
+        
+        # Sort by source and limit to top articles
+        return sorted(all_articles, key=lambda x: x["source"])[:20]
+
+
+class NewsAnalyzer:
+    """Handles AI processing of news using Gemini API"""
+    
+    def __init__(self, language: str = "es"):
+        self.language = language
+        self.model = genai.GenerativeModel("gemini-pro")
+    
+    def summarize_articles(self, articles: List[Dict], max_articles: int = 5) -> str:
+        """Generate a news summary with broadcaster tone using Gemini"""
+        if not articles:
+            return "No hay noticias disponibles en este momento."
+        
+        # Select top articles
+        selected_articles = articles[:max_articles]
+        
+        # Prepare article text
+        articles_text = "\n".join([
+            f"- {article['title']} (Fuente: {article['source']})"
+            for article in selected_articles
+        ])
+        
+        # Create prompt for Gemini
+        prompt = f"""Eres un locutor de noticias profesional. Tu tarea es generar un resumen de noticias 
+        con un tono profesional, amigable y dinámico, como si estuvieras leyendo noticias en la radio.
+        
+        Noticias a resumir:
+        {articles_text}
+        
+        Genera un resumen coherente y fluido en {self.language} que:
+        1. Sea entretenido y profesional
+        2. Cubra los puntos principales de las noticias
+        3. Tenga un tono cálido y accesible
+        4. Dure aproximadamente 2-3 minutos cuando se lea en voz alta
+        5. Incluya transiciones naturales entre temas
+        
+        Comienza directamente con el resumen, sin introducción adicional."""
+        
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            return f"Error al generar resumen: {str(e)}"
+    
+    def generate_headline_summary(self, articles: List[Dict], count: int = 5) -> str:
+        """Generate a quick headline summary"""
+        if not articles:
+            return "No hay titulares disponibles."
+        
+        headlines = "\n".join([
+            f"{i+1}. {article['title']}"
+            for i, article in enumerate(articles[:count])
+        ])
+        
+        prompt = f"""Como locutor de radio profesional, presenta estos titulares de manera 
+        dinámica y concisa en {self.language}:
+        
+        {headlines}
+        
+        Presenta los titulares de forma fluida y entretenida, como si estuvieras leyendo 
+        en la radio. Sé breve y directo."""
+        
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+
+class TextToSpeech:
+    """Handles text-to-speech conversion"""
+    
+    def __init__(self, provider: str = "edge-tts", language: str = "es"):
+        self.provider = provider
+        self.language = language
+        self.voice = os.getenv("VOICE", "es-ES-AlvaroNeural")
+    
+    async def synthesize_gtts(self, text: str) -> Optional[bytes]:
+        """Generate speech using gTTS"""
+        try:
+            from gtts import gTTS
+            
+            tts = gTTS(text=text, lang=self.language[:2], slow=False)
+            audio_buffer = io.BytesIO()
+            tts.write_to_fp(audio_buffer)
+            audio_buffer.seek(0)
+            return audio_buffer.getvalue()
+        except Exception as e:
+            print(f"Error with gTTS: {str(e)}")
+            return None
+    
+    async def synthesize_edge_tts(self, text: str) -> Optional[bytes]:
+        """Generate speech using edge-tts"""
+        try:
+            import edge_tts
+            
+            audio_buffer = io.BytesIO()
+            
+            async def tts_task():
+                async for chunk in edge_tts.Communicate(text, voice=self.voice).stream():
+                    if chunk["type"] == "audio":
+                        audio_buffer.write(chunk["data"])
+            
+            await tts_task()
+            audio_buffer.seek(0)
+            return audio_buffer.getvalue()
+        except Exception as e:
+            print(f"Error with edge-tts: {str(e)}")
+            return None
+    
+    async def synthesize(self, text: str) -> Optional[bytes]:
+        """Generate speech using configured provider"""
+        if self.provider == "edge-tts":
+            return await self.synthesize_edge_tts(text)
+        else:
+            return await self.synthesize_gtts(text)
+
+
+class VoiceActivation:
+    """Handles voice recognition and activation"""
+    
+    def __init__(self, activation_phrase: str = "noticias"):
+        self.activation_phrase = activation_phrase.lower()
+    
+    def listen_for_activation(self, timeout: int = 5) -> bool:
+        """Listen for activation phrase using microphone"""
+        try:
+            import speech_recognition as sr
+            
+            recognizer = sr.Recognizer()
+            
+            with sr.Microphone() as source:
+                print(f"Escuchando... (esperando '{self.activation_phrase}')")
+                recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                
+                try:
+                    audio = recognizer.listen(source, timeout=timeout)
+                    text = recognizer.recognize_google(audio, language="es-ES")
+                    print(f"Detectado: {text}")
+                    
+                    return self.activation_phrase in text.lower()
+                
+                except sr.UnknownValueError:
+                    print("No se entendieron las palabras claras")
+                    return False
+                except sr.RequestError as e:
+                    print(f"Error del servicio de reconocimiento: {e}")
+                    return False
+        
+        except ImportError:
+            print("SpeechRecognition no está disponible")
+            return False
+        except Exception as e:
+            print(f"Error en reconocimiento de voz: {e}")
+            return False
+
+
+def get_timestamp() -> str:
+    """Get current timestamp"""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
