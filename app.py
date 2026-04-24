@@ -109,11 +109,12 @@ with st.sidebar:
     # TTS Provider selection
     tts_provider = st.radio(
         "🔊 Proveedor de Síntesis de Voz",
-        ["edge-tts", "gtts"],
-        help="Elige el proveedor de texto a voz"
+        ["gtts", "edge-tts"],
+        index=0,
+        help="gtts: Sin dependencias, más rápido. edge-tts: mejor calidad pero requiere conexión a Bing"
     )
     
-    # Voice selection for edge-tts
+    # Voice selection for edge-tts only
     if tts_provider == "edge-tts":
         voice_options = {
             "es-ES-AlvaroNeural": "Álvaro (Español - España)",
@@ -129,6 +130,8 @@ with st.sidebar:
             help="Selecciona la voz para la síntesis de voz"
         )
         os.environ["VOICE"] = voice
+    else:
+        st.info("ℹ️ gTTS usa la voz predeterminada del navegador.")
     
     # Number of articles to summarize
     num_articles = st.slider(
@@ -145,14 +148,18 @@ with st.sidebar:
         """
         **Voice News Assistant** es un MVP que:
         - 📡 Obtiene noticias de múltiples feeds RSS
-        - 🤖 Genera resúmenes con IA (Gemini)
+        - 🤖 Genera resúmenes con IA (opcional - funciona sin API key)
         - 🎙️ Convierte texto a voz automáticamente
         - 🎧 Reproduce el resumen en la interfaz web
         
         **Configuración requerida:**
-        1. Ingresa tu clave de API de Gemini
+        1. (Opcional) Ingresa tu clave de API de Gemini para mejor IA
         2. Haz clic en "Cargar Noticias"
         3. El resumen se generará automáticamente
+        4. Genera audio y presiona Play
+        
+        **Nota:** El sistema funciona completamente sin API key.
+        Sin Gemini, usa resúmenes automáticos en lugar de IA.
         """
     )
 
@@ -229,10 +236,8 @@ if st.session_state.news_articles:
 if summarize_button:
     if not st.session_state.news_articles:
         st.warning("⚠️ Por favor, carga las noticias primero")
-    elif not os.getenv("GEMINI_API_KEY"):
-        st.error("❌ Por favor, configura tu clave de API de Gemini en la barra lateral")
     else:
-        with st.spinner("Generando resumen con IA..."):
+        with st.spinner("Generando resumen..."):
             try:
                 analyzer = NewsAnalyzer(language=language)
                 st.session_state.summary = analyzer.summarize_articles(

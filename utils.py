@@ -156,7 +156,16 @@ class NewsAnalyzer:
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"Error al generar resumen: {str(e)}"
+            # Fallback: Create a simple summary without Gemini
+            print(f"⚠️ Gemini API no disponible: {str(e)[:50]}")
+            print("📢 Usando resumen automático sin IA...")
+            
+            summary = f"Resumen de noticias principales:\\n\\n"
+            for i, article in enumerate(selected_articles, 1):
+                summary += f"{i}. {article['title']}\\n"
+                if article.get('summary'):
+                    summary += f"   {article['summary'][:150]}...\\n\\n"
+            return summary
     
     def generate_headline_summary(self, articles: List[Dict], count: int = 5) -> str:
         """Generate a quick headline summary"""
@@ -226,10 +235,14 @@ class TextToSpeech:
     
     async def synthesize(self, text: str) -> Optional[bytes]:
         """Generate speech using configured provider"""
+        # Try edge-tts first, fallback to gTTS if it fails
         if self.provider == "edge-tts":
-            return await self.synthesize_edge_tts(text)
-        else:
-            return await self.synthesize_gtts(text)
+            result = await self.synthesize_edge_tts(text)
+            if result:
+                return result
+            print("⚠️ edge-tts falló, intentando con gTTS...")
+        
+        return await self.synthesize_gtts(text)
 
 
 class VoiceActivation:
