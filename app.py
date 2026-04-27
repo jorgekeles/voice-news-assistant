@@ -116,16 +116,31 @@ with st.sidebar:
     
     # Voice selection for edge-tts only
     if tts_provider == "edge-tts":
-        voice_options = {
-            "es-ES-AlvaroNeural": "Álvaro (Español - España)",
-            "es-MX-JorgeNeural": "Jorge (Español - México)",
-            "en-US-AriaNeural": "Aria (Inglés - USA)",
-            "en-GB-RyanNeural": "Ryan (Inglés - UK)",
-            "fr-FR-DeniseNeural": "Denise (Francés)",
+        voice_options_by_language = {
+            "es": {
+                "es-ES-AlvaroNeural": "Álvaro (Español - España)",
+                "es-MX-JorgeNeural": "Jorge (Español - México)",
+            },
+            "en": {
+                "en-US-AriaNeural": "Aria (Inglés - USA)",
+                "en-GB-RyanNeural": "Ryan (Inglés - UK)",
+            },
+            "fr": {
+                "fr-FR-DeniseNeural": "Denise (Francés)",
+            },
+            "de": {
+                "de-DE-KatjaNeural": "Katja (Alemán)",
+            },
         }
+
+        voice_options = voice_options_by_language.get(language, voice_options_by_language["es"])
+        current_voice = os.getenv("VOICE", next(iter(voice_options)))
+        voice_keys = list(voice_options.keys())
+        voice_index = voice_keys.index(current_voice) if current_voice in voice_options else 0
         voice = st.selectbox(
             "🎙️ Voz",
-            list(voice_options.keys()),
+            voice_keys,
+            index=voice_index,
             format_func=lambda x: voice_options[x],
             help="Selecciona la voz para la síntesis de voz"
         )
@@ -208,6 +223,7 @@ if fetch_button:
                     unsafe_allow_html=True
                 )
                 st.session_state.summary = ""  # Reset summary
+                st.session_state.audio_data = None
             else:
                 st.markdown(
                     '<div class="status-box status-error">❌ No se pudieron cargar noticias</div>',
@@ -239,15 +255,18 @@ if summarize_button:
     else:
         with st.spinner("Generando resumen..."):
             try:
-                analyzer = NewsAnalyzer(language=language)
+                analyzer = NewsAnalyzer(language=language, api_key=api_key)
                 st.session_state.summary = analyzer.summarize_articles(
                     st.session_state.news_articles,
                     max_articles=num_articles
                 )
+                st.session_state.audio_data = None
                 st.markdown(
                     '<div class="status-box status-success">✅ Resumen generado exitosamente</div>',
                     unsafe_allow_html=True
                 )
+                if not api_key:
+                    st.info("ℹ️ Resumen generado con el modo local de fallback, sin Gemini.")
             except Exception as e:
                 st.markdown(
                     f'<div class="status-box status-error">❌ Error al generar resumen: {str(e)}</div>',

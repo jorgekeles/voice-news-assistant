@@ -21,10 +21,22 @@ def test_feedparser():
         import feedparser
         print(f"  ✅ feedparser version: {feedparser.__version__}")
         
-        # Try parsing a test feed
-        feed = feedparser.parse("http://feeds.bbci.co.uk/news/rss.xml")
+        sample_feed = """<?xml version="1.0" encoding="UTF-8" ?>
+        <rss version="2.0">
+          <channel>
+            <title>Sample Feed</title>
+            <item>
+              <title>Sample headline</title>
+              <description>Sample summary</description>
+              <link>https://example.com/story</link>
+            </item>
+          </channel>
+        </rss>
+        """
+
+        feed = feedparser.parse(sample_feed)
         if feed and feed.entries:
-            print(f"  ✅ Can parse RSS feeds (found {len(feed.entries)} entries)")
+            print(f"  ✅ Can parse RSS feeds locally (found {len(feed.entries)} entries)")
         return True
     except Exception as e:
         print(f"  ❌ feedparser test failed: {e}")
@@ -40,14 +52,21 @@ def test_gemini():
         return False
     
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        print(f"  ✅ Gemini API configured")
-        
-        # Try to create a model instance (doesn't consume quota)
-        model = genai.GenerativeModel("gemini-pro")
-        print(f"  ✅ Gemini model ready")
-        return True
+        try:
+            from google import genai
+
+            client = genai.Client(api_key=api_key)
+            print("  ✅ Google GenAI SDK configured")
+            print("  ✅ Gemini client ready")
+            return bool(client)
+        except ImportError:
+            import google.generativeai as genai
+
+            genai.configure(api_key=api_key)
+            print("  ✅ Legacy Gemini SDK configured")
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            print("  ✅ Gemini model ready")
+            return bool(model)
     except Exception as e:
         print(f"  ❌ Gemini API test failed: {e}")
         return False
@@ -60,8 +79,11 @@ def test_speech_recognition():
         print(f"  ✅ SpeechRecognition v{sr.__version__}")
         
         # Check microphone availability
-        mics = sr.Microphone.list_microphone_indexes()
-        print(f"  ✅ Found {len(mics) + 1} microphone(s)")
+        if hasattr(sr.Microphone, "list_microphone_names"):
+            mics = sr.Microphone.list_microphone_names()
+            print(f"  ✅ Found {len(mics)} microphone(s)")
+        else:
+            print("  ⚠️ This SpeechRecognition version cannot enumerate microphones")
         return True
     except Exception as e:
         print(f"  ⚠️ SpeechRecognition not fully available: {e}")

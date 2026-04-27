@@ -4,36 +4,87 @@ import os
 import io
 from datetime import datetime
 from typing import List, Dict, Optional
-import google.generativeai as genai
 from dotenv import load_dotenv
-import asyncio
 
 # Load environment variables
 load_dotenv()
 
-# Configure Gemini API
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+try:
+    from google import genai as google_genai
+except ImportError:
+    google_genai = None
+
+try:
+    import google.generativeai as legacy_genai
+except ImportError:
+    legacy_genai = None
 
 class NewsAggregator:
     """Handles RSS feed fetching and processing"""
     
     def __init__(self, sources_file: str = "sources.json"):
         self.sources_file = sources_file
-        self.sources = self._load_sources()
+        self.config = self._load_sources()
+        self.sources = self.config.get("sources", [])
+        self.demo_mode = self.config.get("demo_mode", False)
+        self.demo_articles = self.config.get("demo_articles", [])
     
-    def _load_sources(self) -> List[Dict]:
+    def _load_sources(self) -> Dict:
         """Load RSS sources from JSON file"""
         if not os.path.exists(self.sources_file):
-            return []
+            return {}
         
         with open(self.sources_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        return data.get("sources", [])
+            return json.load(f)
+
+    def _get_demo_articles(self) -> List[Dict]:
+        """Return configured demo articles or the built-in fallback set."""
+        if self.demo_articles:
+            return self.demo_articles
+
+        return [
+            {
+                "source": "TechNews",
+                "title": "Inteligencia Artificial revoluciona el desarrollo de software",
+                "summary": "Los últimos avances en IA están transformando cómo los desarrolladores escriben código, mejorando significativamente la productividad y la calidad del software.",
+                "link": "https://ejemplo.com/ai-software",
+                "published": "2026-04-24T10:00:00Z"
+            },
+            {
+                "source": "Ciencia",
+                "title": "Descubrimiento revolucionario en física cuántica",
+                "summary": "Científicos logran avance importante en computación cuántica que podría cambiar la industria tecnológica en los próximos años.",
+                "link": "https://ejemplo.com/quantum",
+                "published": "2026-04-24T09:30:00Z"
+            },
+            {
+                "source": "Tecnología",
+                "title": "Nuevas regulaciones sobre privacidad de datos en Europa",
+                "summary": "La Unión Europea implementa nuevas normas para proteger datos personales de ciudadanos en plataformas digitales.",
+                "link": "https://ejemplo.com/privacy",
+                "published": "2026-04-24T08:45:00Z"
+            },
+            {
+                "source": "Ciberseguridad",
+                "title": "Ataque cibernético masivo afecta a múltiples empresas",
+                "summary": "Expertos alertan sobre vulnerabilidad crítica en software ampliamente utilizado que fue explotada en ataque coordinado.",
+                "link": "https://ejemplo.com/cyber",
+                "published": "2026-04-24T07:20:00Z"
+            },
+            {
+                "source": "Startup",
+                "title": "Nueva startup de IA recauda 50 millones en inversión",
+                "summary": "Empresa emergente de inteligencia artificial obtiene financiación de inversores reconocidos para expandir plataforma.",
+                "link": "https://ejemplo.com/startup",
+                "published": "2026-04-24T06:00:00Z"
+            }
+        ]
     
     def fetch_feeds(self) -> List[Dict]:
         """Fetch all enabled RSS feeds"""
+        if self.demo_mode:
+            return sorted(self._get_demo_articles(), key=lambda x: x.get("source", ""))[:20]
+
         all_articles = []
         
         # User-Agent to avoid blocking
@@ -72,55 +123,57 @@ class NewsAggregator:
         # If no articles found, use demo articles
         if not all_articles:
             print("📢 No articles from feeds, using demo articles...")
-            demo_articles = [
-                {
-                    "source": "TechNews",
-                    "title": "Inteligencia Artificial revoluciona el desarrollo de software",
-                    "summary": "Los últimos avances en IA están transformando cómo los desarrolladores escriben código, mejorando significativamente la productividad y la calidad del software.",
-                    "link": "https://ejemplo.com/ai-software",
-                    "published": "2026-04-24T10:00:00Z"
-                },
-                {
-                    "source": "Ciencia",
-                    "title": "Descubrimiento revolucionario en física cuántica",
-                    "summary": "Científicos logran avance importante en computación cuántica que podría cambiar la industria tecnológica en los próximos años.",
-                    "link": "https://ejemplo.com/quantum",
-                    "published": "2026-04-24T09:30:00Z"
-                },
-                {
-                    "source": "Tecnología",
-                    "title": "Nuevas regulaciones sobre privacidad de datos en Europa",
-                    "summary": "La Unión Europea implementa nuevas normas para proteger datos personales de ciudadanos en plataformas digitales.",
-                    "link": "https://ejemplo.com/privacy",
-                    "published": "2026-04-24T08:45:00Z"
-                },
-                {
-                    "source": "Ciberseguridad",
-                    "title": "Ataque cibernético masivo afecta a múltiples empresas",
-                    "summary": "Expertos alertan sobre vulnerabilidad crítica en software ampliamente utilizado que fue explotada en ataque coordinado.",
-                    "link": "https://ejemplo.com/cyber",
-                    "published": "2026-04-24T07:20:00Z"
-                },
-                {
-                    "source": "Startup",
-                    "title": "Nueva startup de IA recauda 50 millones en inversión",
-                    "summary": "Empresa emergente de inteligencia artificial obtiene financiación de inversores reconocidos para expandir plataforma.",
-                    "link": "https://ejemplo.com/startup",
-                    "published": "2026-04-24T06:00:00Z"
-                }
-            ]
-            all_articles = demo_articles
+            all_articles = self._get_demo_articles()
         
         # Sort by source and limit to top articles
-        return sorted(all_articles, key=lambda x: x["source"])[:20]
+        return sorted(all_articles, key=lambda x: x.get("source", ""))[:20]
 
 
 class NewsAnalyzer:
     """Handles AI processing of news using Gemini API"""
     
-    def __init__(self, language: str = "es"):
+    def __init__(self, language: str = "es", api_key: Optional[str] = None):
         self.language = language
-        self.model = genai.GenerativeModel("gemini-pro")
+        self.api_key = os.getenv("GEMINI_API_KEY", "") if api_key is None else api_key
+        self.client = None
+        self.model = None
+        self.uses_legacy_sdk = False
+
+        if google_genai and self.api_key:
+            self.client = google_genai.Client(api_key=self.api_key)
+            self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        elif legacy_genai and self.api_key:
+            legacy_genai.configure(api_key=self.api_key)
+            self.model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+            self.model = legacy_genai.GenerativeModel(self.model_name)
+            self.uses_legacy_sdk = True
+        else:
+            self.model_name = ""
+
+    def _build_fallback_summary(self, selected_articles: List[Dict]) -> str:
+        """Create a readable local fallback summary without AI."""
+        lines = ["Resumen de noticias principales:", ""]
+        for i, article in enumerate(selected_articles, 1):
+            lines.append(f"{i}. {article['title']}")
+            if article.get("summary"):
+                lines.append(f"   {article['summary'][:150]}...")
+            lines.append("")
+        return "\n".join(lines).strip()
+
+    def _generate_with_gemini(self, prompt: str) -> str:
+        """Generate content using the best available Gemini SDK."""
+        if self.client:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
+            return response.text
+
+        if self.model:
+            response = self.model.generate_content(prompt)
+            return response.text
+
+        raise RuntimeError("Gemini API no está configurada")
     
     def summarize_articles(self, articles: List[Dict], max_articles: int = 5) -> str:
         """Generate a news summary with broadcaster tone using Gemini"""
@@ -153,19 +206,12 @@ class NewsAnalyzer:
         Comienza directamente con el resumen, sin introducción adicional."""
         
         try:
-            response = self.model.generate_content(prompt)
-            return response.text
+            return self._generate_with_gemini(prompt)
         except Exception as e:
             # Fallback: Create a simple summary without Gemini
             print(f"⚠️ Gemini API no disponible: {str(e)[:50]}")
             print("📢 Usando resumen automático sin IA...")
-            
-            summary = f"Resumen de noticias principales:\\n\\n"
-            for i, article in enumerate(selected_articles, 1):
-                summary += f"{i}. {article['title']}\\n"
-                if article.get('summary'):
-                    summary += f"   {article['summary'][:150]}...\\n\\n"
-            return summary
+            return self._build_fallback_summary(selected_articles)
     
     def generate_headline_summary(self, articles: List[Dict], count: int = 5) -> str:
         """Generate a quick headline summary"""
@@ -186,10 +232,13 @@ class NewsAnalyzer:
         en la radio. Sé breve y directo."""
         
         try:
-            response = self.model.generate_content(prompt)
-            return response.text
+            return self._generate_with_gemini(prompt)
         except Exception as e:
-            return f"Error: {str(e)}"
+            print(f"⚠️ Gemini API no disponible: {str(e)[:50]}")
+            return "\n".join([
+                f"{i + 1}. {article['title']}"
+                for i, article in enumerate(articles[:count])
+            ])
 
 
 class TextToSpeech:
@@ -198,7 +247,17 @@ class TextToSpeech:
     def __init__(self, provider: str = "edge-tts", language: str = "es"):
         self.provider = provider
         self.language = language
-        self.voice = os.getenv("VOICE", "es-ES-AlvaroNeural")
+        self.voice = os.getenv("VOICE") or self._default_voice_for_language()
+
+    def _default_voice_for_language(self) -> str:
+        """Choose a sensible default voice for the selected language."""
+        default_voices = {
+            "es": "es-ES-AlvaroNeural",
+            "en": "en-US-AriaNeural",
+            "fr": "fr-FR-DeniseNeural",
+            "de": "de-DE-KatjaNeural",
+        }
+        return default_voices.get(self.language[:2], "es-ES-AlvaroNeural")
     
     async def synthesize_gtts(self, text: str) -> Optional[bytes]:
         """Generate speech using gTTS"""

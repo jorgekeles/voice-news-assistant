@@ -35,11 +35,10 @@ async def main():
     # Check API key
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        print("❌ Error: GEMINI_API_KEY no está configurada")
-        print("Por favor, configura tu .env file con tu clave de API")
-        sys.exit(1)
-    
-    print("✅ API Key configurada")
+        print("⚠️ GEMINI_API_KEY no está configurada")
+        print("Se usará el resumen local de fallback, sin Gemini.")
+    else:
+        print("✅ API Key configurada")
     print("🌐 Idioma: " + os.getenv("LANGUAGE", "es"))
     
     # Step 1: Fetch news
@@ -57,7 +56,7 @@ async def main():
     print_header("PASO 2: GENERANDO RESUMEN CON IA")
     language = os.getenv("LANGUAGE", "es")
     try:
-        analyzer = NewsAnalyzer(language=language)
+        analyzer = NewsAnalyzer(language=language, api_key=api_key)
         summary = analyzer.summarize_articles(articles, max_articles=5)
         print("📝 RESUMEN GENERADO:\n")
         print(summary)
