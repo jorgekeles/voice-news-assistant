@@ -7,3 +7,5 @@ edge-tts==6.1.1
 gTTS==2.4.0
 python-dotenv==1.0.0
 pyaudio==0.2.13
+requests>=2.31.0
+certifi>=2024.2.2
